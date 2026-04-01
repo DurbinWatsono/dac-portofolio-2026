@@ -39,7 +39,7 @@ with st.sidebar.form(key='form_analisis'):
 
 with st.sidebar.expander("Penjelasan Parameter"):
     st.write("""
-    * **Jumlah Saham (N):** GUI melakukan uji normalitas univariat untuk memfilter saham tanpa outlier, lalu memilih saham dengan rata-rata return positif. Dari kelompok tersebut, GUI memilih sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga N saham yang memiliki rata-rata korelasi maksimal 0.2 terhadap saham terpilih. Tujuannya adalah diversifikasi portofolio sehingga risiko seminimum mungkin dam keuntungan semaksimum mungkin.
+    * **Jumlah Saham (N):** GUI melakukan uji normalitas univariat untuk memfilter saham tanpa outlier, lalu memilih saham dengan rata-rata return positif. Selanjutnya, GUI memilih sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga N saham yang memiliki rata-rata korelasi maksimal 0.2 terhadap saham terpilih. Tujuannya adalah diversifikasi portofolio sehingga risiko seminimum mungkin dam keuntungan semaksimum mungkin.
     * **Toleransi Risiko (k):** Indeks risk aversion (menghindari risiko) yang mengukur toleransi risiko seorang investor.
         * **k Besar (misal 50):** Investor Penghindar Risiko (Risk Averse).
         * **k Menengah (misal 2-10):** Investor Netral Risiko (Risk Neutral).
@@ -113,7 +113,7 @@ if submit_button:
         if len(terpilih) < n_saham:
             st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Analisis dilanjutkan dengan {len(terpilih)} saham.")
 
-        st.success(f"Ringkasan Pembentukan: Algoritma telah melakukan uji normalitas univariat, menmilih rata-rata return positif, dan menyeleksi {len(terpilih)} saham ({', '.join(terpilih)}) menggunakan korelasi rata-rata antar saham. Optimasi portofolio multiobjektif dilakukan dengan nilai k = {nilai_k}.")
+        st.success(f"Ringkasan Pembentukan: Algoritma telah melakukan seleksi uji normalitas univariat, rata-rata return positif, dan korelasi rata-rata antar saham. Didapat {len(terpilih)} saham ({', '.join(terpilih)}). Optimasi portofolio multiobjektif dilakukan dengan nilai k = {nilai_k}.")
 
         # TAHAP 2: OPTIMASI MULTIOBJEKTIF
         df_port = df_positif[terpilih]
