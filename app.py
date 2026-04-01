@@ -27,13 +27,13 @@ st.sidebar.header("Parameter Model")
 
 with st.sidebar.form(key='form_analisis'):
     n_saham = st.slider("Jumlah Saham (N)", min_value=2, max_value=6, value=5)
-    # Format input dihapus agar menerima nilai presisi tanpa pembulatan visual
-    nilai_k = st.number_input("Toleransi Risiko (k)", min_value=1e-9, value=10.0)
+    # Penambahan format="%g" agar tampilan presisi mengikuti input pengguna
+    nilai_k = st.number_input("Toleransi Risiko (k)", min_value=1e-9, value=10.0, format="%g")
     
     st.markdown("---")
-    tingkat_kepercayaan = st.number_input("Tingkat Kepercayaan VaR", min_value=0.0001, max_value=0.9999, value=0.95)
+    tingkat_kepercayaan = st.number_input("Tingkat Kepercayaan VaR", min_value=0.0001, max_value=0.9999, value=0.95, format="%g")
     horizon_waktu = st.number_input("Horizon Waktu (t hari)", min_value=1, value=1, step=1)
-    modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0)
+    modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0, format="%g")
     
     submit_button = st.form_submit_button(label='Jalankan Analisis')
 
@@ -143,7 +143,6 @@ if submit_button:
                 'Bobot (Desimal)': np.round(bobot_optimal, 4),
                 'Persentase': [f"{b*100:.2f}%" for b in bobot_optimal]
             })
-            # Menyembunyikan indeks tabel (kolom pertama)
             st.dataframe(df_bobot, use_container_width=True, hide_index=True)
             st.info(f"Total Bobot Matematis: {np.sum(bobot_optimal):.4f} (Mewakili 100% dari modal)")
 
@@ -166,7 +165,6 @@ if submit_button:
         percentil = np.percentile(return_port, alpha * 100)
         var_rupiah = modal_awal * abs(percentil) * np.sqrt(horizon_waktu)
 
-        # Memisahkan Modal Awal agar tidak terpotong
         st.metric("Modal Awal", f"Rp {modal_awal:,.2f}")
         
         m1, m2, m3 = st.columns(3)
