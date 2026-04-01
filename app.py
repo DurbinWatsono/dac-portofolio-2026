@@ -5,7 +5,7 @@ import scipy.stats as stats
 import plotly.express as px
 
 # 1. Konfigurasi Halaman Dasar
-st.set_page_config(page_title="GUI Portofolio DAC", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GUI Durbin Watsono", layout="wide", initial_sidebar_state="expanded")
 
 # Kustomisasi CSS untuk tampilan formal dan akademik (Times New Roman / Serif)
 st.markdown("""
@@ -37,14 +37,14 @@ with st.sidebar.form(key='form_analisis'):
     
     submit_button = st.form_submit_button(label='Jalankan Analisis')
 
-with st.sidebar.expander("Panduan Parameter"):
+with st.sidebar.expander("Penjelasan Parameter"):
     st.write("""
-    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan rata-rata return positif. Dari kelompok tersebut, algoritma mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga N saham yang memiliki rata-rata korelasi maksimal 0.2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
-    * **Toleransi Risiko (k):** Parameter penalti terhadap variansi dalam persamaan lagrange.
+    * **Jumlah Saham (N):** GUI melakukan uji normalitas univariat untuk memfilter saham tanpa outlier, lalu memilih saham dengan rata-rata return positif. Dari kelompok tersebut, GUI memilih sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga N saham yang memiliki rata-rata korelasi maksimal 0.2 terhadap saham terpilih. Tujuannya adalah diversifikasi portofolio sehingga risiko seminimum mungkin dam keuntungan semaksimum mungkin.
+    * **Toleransi Risiko (k):** Indeks risk aversion (menghindari risiko) yang mengukur toleransi risiko seorang investor.
         * **k Besar (misal 50):** Investor Penghindar Risiko (Risk Averse).
         * **k Menengah (misal 2-10):** Investor Netral Risiko (Risk Neutral).
         * **k Mendekati 0 (misal 0.01):** Investor Berani Risiko (Risk Seeking).
-    * **Short-Selling (Trading Limit):** Karena optimasi multiobjektif ini diselesaikan melalui persamaan matriks analitik eksak, komputasi secara matematis mengizinkan bobot negatif secara mutlak. Investor dapat meminjam saham tertentu untuk dijual, lalu dana tersebut dialokasikan ke saham lain. Saham yang di-short kelak harus dikembalikan.
+    * **Short-Selling (Trading Limit):** Optimasi multiobjektif ini dapat menghasilkan bobot negatif. Hal ini dinamakan short selling yaitu investor dapat meminjam saham tertentu untuk dijual, lalu dana tersebut dialokasikan ke saham lain. Saham yang dilakukan short selling kelak harus dikembalikan.
     """)
 
 # 3. Fungsi Pemrosesan Data
@@ -68,7 +68,7 @@ def siapkan_data():
 
 # Eksekusi Utama
 if submit_button:
-    with st.spinner('Memproses data dan menjalankan komputasi matriks...'):
+    with st.spinner('Memproses data dan menjalankan analisis...'):
         log_return = siapkan_data()
 
         # TAHAP 1: SELEKSI SAHAM
@@ -113,7 +113,7 @@ if submit_button:
         if len(terpilih) < n_saham:
             st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Analisis dilanjutkan dengan {len(terpilih)} saham.")
 
-        st.success(f"Ringkasan Pembentukan: Algoritma telah melakukan uji normalitas univariat, menyaring rata-rata return positif, dan menyeleksi {len(terpilih)} saham ({', '.join(terpilih)}) menggunakan metode penyaringan korelasi rata-rata. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko k = {nilai_k}.")
+        st.success(f"Ringkasan Pembentukan: Algoritma telah melakukan uji normalitas univariat, menmilih rata-rata return positif, dan menyeleksi {len(terpilih)} saham ({', '.join(terpilih)}) menggunakan korelasi rata-rata antar saham. Optimasi portofolio multiobjektif dilakukan dengan nilai k = {nilai_k}.")
 
         # TAHAP 2: OPTIMASI MULTIOBJEKTIF
         df_port = df_positif[terpilih]
@@ -147,7 +147,7 @@ if submit_button:
             st.info(f"Total Bobot Matematis: {np.sum(bobot_optimal):.4f} (Mewakili 100% dari modal)")
 
             if any(bobot_optimal < -0.001):
-                st.error("Aktivitas Short-Selling (Trading Limit): Terdapat alokasi bobot negatif. Investor meminjam saham tersebut dari pihak lain untuk dijual, dan dananya digunakan untuk mendanai pembelian saham lain yang berbobot positif. Kelak saham tersebut harus dikembalikan beserta imbal hasilnya.")
+                st.error("Aktivitas Short-Selling (Trading Limit): Terdapat alokasi bobot negatif. Investor meminjam saham tersebut dari pihak lain untuk dijual dan dananya digunakan untuk mendanai pembelian saham lain yang berbobot positif. Kelak saham tersebut harus dikembalikan beserta imbal hasilnya.")
 
         with col2:
             st.subheader("Visualisasi Portofolio")
@@ -175,4 +175,4 @@ if submit_button:
         st.success(f"Interpretasi: Terdapat probabilitas sebesar {tingkat_kepercayaan*100:.1f}% bahwa kerugian aktual portofolio ini tidak akan melebihi estimasi Rp {var_rupiah:,.2f} dalam {horizon_waktu} hari perdagangan ke depan.")
 
 else:
-    st.info("Silakan atur parameter di bilah sisi kiri, lalu klik Jalankan Analisis untuk melihat hasil komputasi model.")
+    st.info("Silakan atur parameter di bilah sisi kiri, lalu klik Jalankan Analisis untuk melihat hasil analisis.")
