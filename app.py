@@ -7,23 +7,27 @@ import plotly.express as px
 # 1. Konfigurasi Halaman Dasar
 st.set_page_config(page_title="GUI Portofolio DAC", layout="wide", initial_sidebar_state="expanded")
 
+# Kustomisasi CSS untuk tampilan formal dan akademik (Times New Roman / Serif)
 st.markdown("""
     <style>
-    .main {background-color: #f8f9fa;}
-    h1, h2, h3 {color: #2c3e50;}
+    .stApp {
+        font-family: 'Times New Roman', Times, serif;
+    }
+    .main {background-color: #ffffff;}
+    h1, h2, h3 {color: #000000;}
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📊 GUI Optimasi Portofolio Multiobjektif & Analisis VaR")
+st.title("GUI Optimasi Portofolio Multiobjektif dan Analisis VaR")
 st.markdown("**Tim Durbin Watsono | Data Analysis Competition - Matematika Fair UNIMED 2026**")
 st.markdown("---")
 
 # 2. Sidebar dengan Form Input dan Penjelasan
-st.sidebar.header("⚙️ Parameter Model")
+st.sidebar.header("Parameter Model")
 
 with st.sidebar.form(key='form_analisis'):
     n_saham = st.slider("Jumlah Saham (N)", min_value=2, max_value=6, value=5)
-    # Format dan step dihapus agar menerima nilai ekstrem sekecil apapun
+    # Format input dihapus agar menerima nilai presisi tanpa pembulatan visual
     nilai_k = st.number_input("Toleransi Risiko (k)", min_value=1e-9, value=10.0)
     
     st.markdown("---")
@@ -31,15 +35,15 @@ with st.sidebar.form(key='form_analisis'):
     horizon_waktu = st.number_input("Horizon Waktu (t hari)", min_value=1, value=1, step=1)
     modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0)
     
-    submit_button = st.form_submit_button(label='Jalankan Analisis 🚀')
+    submit_button = st.form_submit_button(label='Jalankan Analisis')
 
-with st.sidebar.expander("📖 Panduan Parameter"):
+with st.sidebar.expander("Panduan Parameter"):
     st.write("""
-    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan *mean return* positif. Dari sana, sistem akan mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga $N$ saham yang memiliki rata-rata korelasi maksimal 0,2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
+    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan rata-rata return positif. Dari kelompok tersebut, algoritma mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga N saham yang memiliki rata-rata korelasi maksimal 0.2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
     * **Toleransi Risiko (k):** Parameter penalti terhadap variansi dalam persamaan lagrange.
-        * **k Besar (misal $\ge 50$):** Investor Penghindar Risiko (*Risk Averse*).
-        * **k Menengah (misal $2-10$):** Investor Netral Risiko (*Risk Neutral*).
-        * **k Mendekati 0 (misal $0.01$):** Investor Berani Risiko (*Risk Seeking*).
+        * **k Besar (misal 50):** Investor Penghindar Risiko (Risk Averse).
+        * **k Menengah (misal 2-10):** Investor Netral Risiko (Risk Neutral).
+        * **k Mendekati 0 (misal 0.01):** Investor Berani Risiko (Risk Seeking).
     * **Short-Selling (Trading Limit):** Karena optimasi multiobjektif ini diselesaikan melalui persamaan matriks analitik eksak, komputasi secara matematis mengizinkan bobot negatif secara mutlak. Investor dapat meminjam saham tertentu untuk dijual, lalu dana tersebut dialokasikan ke saham lain. Saham yang di-short kelak harus dikembalikan.
     """)
 
@@ -56,7 +60,6 @@ def siapkan_data():
     df['Stock_Name'] = df['Stock_Name'].str.strip()
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
     
-    # Kalkulasi Log Return seluruh data sebelum di-filter 2024
     df_close = df.pivot(index='Date', columns='Stock_Name', values='Close')
     log_return = np.log(df_close / df_close.shift(1)).dropna()
     log_return_2024 = log_return[log_return.index.year == 2024]
@@ -69,7 +72,6 @@ if submit_button:
         log_return = siapkan_data()
 
         # TAHAP 1: SELEKSI SAHAM
-        # Uji Normalitas Univariat (Jarque-Bera)
         normal_stocks = []
         for col in log_return.columns:
             stat, p_value = stats.jarque_bera(log_return[col].dropna())
@@ -81,22 +83,17 @@ if submit_button:
         else:
             df_filtered = log_return
 
-        # Filter Mean Positif
         mean_ret = df_filtered.mean()
         saham_positif = mean_ret[mean_ret > 0].index.tolist()
         df_positif = df_filtered[saham_positif]
 
-        # Algoritma Penyaringan Rata-rata Korelasi
         corr_matrix = df_positif.corr()
         corr_upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         
-        # Step 1: Pasangan dengan korelasi terkecil absolut sebagai titik awal
         min_idx = corr_upper.stack().idxmin()
         terpilih = list(min_idx)
-        
         sisa_saham = [s for s in corr_matrix.columns if s not in terpilih]
         
-        # Step 2: Iterasi pencarian
         while sisa_saham and len(terpilih) < n_saham:
             kandidat_scores = {}
             for saham in sisa_saham:
@@ -116,9 +113,9 @@ if submit_button:
         if len(terpilih) < n_saham:
             st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Analisis dilanjutkan dengan {len(terpilih)} saham.")
 
-        st.success(f"**Ringkasan Pembentukan:** Algoritma telah melakukan uji normalitas univariat, menyaring *mean return* positif, dan menyeleksi **{len(terpilih)} saham** ({', '.join(terpilih)}) menggunakan metode penyaringan korelasi rata-rata. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko **$k$ = {nilai_k}**.")
+        st.success(f"Ringkasan Pembentukan: Algoritma telah melakukan uji normalitas univariat, menyaring rata-rata return positif, dan menyeleksi {len(terpilih)} saham ({', '.join(terpilih)}) menggunakan metode penyaringan korelasi rata-rata. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko k = {nilai_k}.")
 
-        # TAHAP 2: OPTIMASI MULTIOBJEKTIF (Solusi Analitik Eksak Matrix Lagrange)
+        # TAHAP 2: OPTIMASI MULTIOBJEKTIF
         df_port = df_positif[terpilih]
         
         def hitung_bobot_multiobjektif(df_data, k):
@@ -140,20 +137,21 @@ if submit_button:
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.subheader("📌 Hasil Alokasi Bobot")
+            st.subheader("Hasil Alokasi Bobot")
             df_bobot = pd.DataFrame({
                 'Saham': terpilih,
                 'Bobot (Desimal)': np.round(bobot_optimal, 4),
                 'Persentase': [f"{b*100:.2f}%" for b in bobot_optimal]
             })
-            st.dataframe(df_bobot, use_container_width=True)
-            st.info(f"**Total Bobot Matematis:** {np.sum(bobot_optimal):.4f} (Mewakili 100% dari modal)")
+            # Menyembunyikan indeks tabel (kolom pertama)
+            st.dataframe(df_bobot, use_container_width=True, hide_index=True)
+            st.info(f"Total Bobot Matematis: {np.sum(bobot_optimal):.4f} (Mewakili 100% dari modal)")
 
             if any(bobot_optimal < -0.001):
-                st.error("📉 **Aktivitas Short-Selling (Trading Limit):** Terdapat alokasi bobot negatif. Investor meminjam saham tersebut dari pihak lain untuk dijual, dan dananya digunakan untuk mendanai pembelian saham lain yang berbobot positif. Kelak saham tersebut harus dikembalikan beserta imbal hasilnya.")
+                st.error("Aktivitas Short-Selling (Trading Limit): Terdapat alokasi bobot negatif. Investor meminjam saham tersebut dari pihak lain untuk dijual, dan dananya digunakan untuk mendanai pembelian saham lain yang berbobot positif. Kelak saham tersebut harus dikembalikan beserta imbal hasilnya.")
 
         with col2:
-            st.subheader("📊 Visualisasi Portofolio")
+            st.subheader("Visualisasi Portofolio")
             fig = px.bar(df_bobot, x='Saham', y='Bobot (Desimal)', text='Persentase', 
                          color='Bobot (Desimal)', color_continuous_scale=px.colors.diverging.Tealrose)
             fig.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
@@ -161,21 +159,22 @@ if submit_button:
 
         # TAHAP 3: PENGUKURAN RISIKO (VaR Historis)
         st.markdown("---")
-        st.subheader("🛡️ Pengukuran Risiko (Value at Risk - Historical Simulation)")
+        st.subheader("Pengukuran Risiko (Value at Risk - Historical Simulation)")
 
         return_port = df_port.values @ bobot_optimal
         alpha = 1 - tingkat_kepercayaan
         percentil = np.percentile(return_port, alpha * 100)
         var_rupiah = modal_awal * abs(percentil) * np.sqrt(horizon_waktu)
 
-        # Menambahkan Modal Awal ke dalam metrik
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Modal Awal", f"Rp {modal_awal:,.2f}")
-        m2.metric("Persentil Return", f"{percentil*100:.3f}%")
-        m3.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
-        m4.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
+        # Memisahkan Modal Awal agar tidak terpotong
+        st.metric("Modal Awal", f"Rp {modal_awal:,.2f}")
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Persentil Return", f"{percentil*100:.3f}%")
+        m2.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
+        m3.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
 
-        st.success(f"**Interpretasi:** Terdapat probabilitas sebesar **{tingkat_kepercayaan*100:.1f}%** bahwa kerugian aktual portofolio ini tidak akan melebihi estimasi **Rp {var_rupiah:,.2f}** dalam **{horizon_waktu} hari perdagangan** ke depan.")
+        st.success(f"Interpretasi: Terdapat probabilitas sebesar {tingkat_kepercayaan*100:.1f}% bahwa kerugian aktual portofolio ini tidak akan melebihi estimasi Rp {var_rupiah:,.2f} dalam {horizon_waktu} hari perdagangan ke depan.")
 
 else:
-    st.info("👈 Silakan atur parameter di bilah sisi kiri, lalu klik **Jalankan Analisis** untuk melihat hasil komputasi model.")
+    st.info("Silakan atur parameter di bilah sisi kiri, lalu klik Jalankan Analisis untuk melihat hasil komputasi model.")
