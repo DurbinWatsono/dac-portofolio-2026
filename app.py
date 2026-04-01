@@ -23,18 +23,19 @@ st.sidebar.header("⚙️ Parameter Model")
 
 with st.sidebar.form(key='form_analisis'):
     n_saham = st.slider("Jumlah Saham (N)", min_value=2, max_value=6, value=5)
-    nilai_k = st.number_input("Toleransi Risiko (k)", min_value=0.01, value=10.00, step=0.10, format="%.2f")
+    # Format dan step dihapus agar menerima nilai ekstrem sekecil apapun
+    nilai_k = st.number_input("Toleransi Risiko (k)", min_value=1e-9, value=10.0)
     
     st.markdown("---")
-    tingkat_kepercayaan = st.number_input("Tingkat Kepercayaan VaR", min_value=0.0001, max_value=0.9999, value=0.9500, step=0.0100, format="%.4f")
+    tingkat_kepercayaan = st.number_input("Tingkat Kepercayaan VaR", min_value=0.0001, max_value=0.9999, value=0.95)
     horizon_waktu = st.number_input("Horizon Waktu (t hari)", min_value=1, value=1, step=1)
-    modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0, step=100000.0, format="%.2f")
+    modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0)
     
     submit_button = st.form_submit_button(label='Jalankan Analisis 🚀')
 
 with st.sidebar.expander("📖 Panduan Parameter"):
     st.write("""
-    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan *mean return* positif. Dari sana, algoritma *greedy* akan mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga $N$ saham yang memiliki rata-rata korelasi maksimal 0,2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
+    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan *mean return* positif. Dari sana, sistem akan mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga $N$ saham yang memiliki rata-rata korelasi maksimal 0,2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
     * **Toleransi Risiko (k):** Parameter penalti terhadap variansi dalam persamaan lagrange.
         * **k Besar (misal $\ge 50$):** Investor Penghindar Risiko (*Risk Averse*).
         * **k Menengah (misal $2-10$):** Investor Netral Risiko (*Risk Neutral*).
@@ -85,7 +86,7 @@ if submit_button:
         saham_positif = mean_ret[mean_ret > 0].index.tolist()
         df_positif = df_filtered[saham_positif]
 
-        # Algoritma Korelasi Rakus (Greedy) Sesuai Colab
+        # Algoritma Penyaringan Rata-rata Korelasi
         corr_matrix = df_positif.corr()
         corr_upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         
@@ -95,7 +96,7 @@ if submit_button:
         
         sisa_saham = [s for s in corr_matrix.columns if s not in terpilih]
         
-        # Step 2: Iterasi greedy
+        # Step 2: Iterasi pencarian
         while sisa_saham and len(terpilih) < n_saham:
             kandidat_scores = {}
             for saham in sisa_saham:
@@ -113,9 +114,9 @@ if submit_button:
             sisa_saham.remove(saham_baru)
 
         if len(terpilih) < n_saham:
-            st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Algoritma dilanjutkan dengan {len(terpilih)} saham.")
+            st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Analisis dilanjutkan dengan {len(terpilih)} saham.")
 
-        st.success(f"**Ringkasan Pembentukan:** Algoritma telah melakukan uji normalitas univariat, menyaring *mean return* positif, dan menyeleksi **{len(terpilih)} saham** ({', '.join(terpilih)}) menggunakan metode *Greedy Correlation*. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko **$k$ = {nilai_k}**.")
+        st.success(f"**Ringkasan Pembentukan:** Algoritma telah melakukan uji normalitas univariat, menyaring *mean return* positif, dan menyeleksi **{len(terpilih)} saham** ({', '.join(terpilih)}) menggunakan metode penyaringan korelasi rata-rata. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko **$k$ = {nilai_k}**.")
 
         # TAHAP 2: OPTIMASI MULTIOBJEKTIF (Solusi Analitik Eksak Matrix Lagrange)
         df_port = df_positif[terpilih]
@@ -167,10 +168,12 @@ if submit_button:
         percentil = np.percentile(return_port, alpha * 100)
         var_rupiah = modal_awal * abs(percentil) * np.sqrt(horizon_waktu)
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Batas Return Terburuk", f"{percentil*100:.3f}%")
-        m2.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
-        m3.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
+        # Menambahkan Modal Awal ke dalam metrik
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Modal Awal", f"Rp {modal_awal:,.2f}")
+        m2.metric("Persentil Return", f"{percentil*100:.3f}%")
+        m3.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
+        m4.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
 
         st.success(f"**Interpretasi:** Terdapat probabilitas sebesar **{tingkat_kepercayaan*100:.1f}%** bahwa kerugian aktual portofolio ini tidak akan melebihi estimasi **Rp {var_rupiah:,.2f}** dalam **{horizon_waktu} hari perdagangan** ke depan.")
 
