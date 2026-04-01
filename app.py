@@ -172,7 +172,7 @@ if submit_button:
         m2.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
         m3.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
 
-        st.success(f"Interpretasi: terdapat keyakinan sebesar {tingkat_kepercayaan*100:.1f}% bahwa kerugian yang dialami tidak akan melebihi Rp {var_rupiah:,.2f} untuk jangka waktu investasi selama {horizon_waktu} hari perdagangan ke depan.")
+        st.success(f"Interpretasi: Terdapat keyakinan sebesar {tingkat_kepercayaan*100:.1f}% bahwa kerugian yang dialami tidak akan melebihi Rp {var_rupiah:,.2f} untuk jangka waktu investasi selama {horizon_waktu} hari perdagangan ke depan.")
 
 else:
     st.info("Silakan atur parameter di bilah sisi kiri, lalu klik Jalankan Analisis untuk melihat hasil analisis.")
