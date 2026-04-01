@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.optimize import minimize
+import scipy.stats as stats
 import plotly.express as px
 
 # 1. Konfigurasi Halaman Dasar
@@ -14,7 +14,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📊 Optimasi Portofolio Multiobjektif & Analisis VaR")
+st.title("📊 GUI Optimasi Portofolio Multiobjektif & Analisis VaR")
 st.markdown("**Tim Durbin Watsono | Data Analysis Competition - Matematika Fair UNIMED 2026**")
 st.markdown("---")
 
@@ -23,26 +23,23 @@ st.sidebar.header("⚙️ Parameter Model")
 
 with st.sidebar.form(key='form_analisis'):
     n_saham = st.slider("Jumlah Saham (N)", min_value=2, max_value=6, value=5)
-    # Perbaikan input float agar presisi
     nilai_k = st.number_input("Toleransi Risiko (k)", min_value=0.01, value=10.00, step=0.10, format="%.2f")
     
     st.markdown("---")
     tingkat_kepercayaan = st.number_input("Tingkat Kepercayaan VaR", min_value=0.0001, max_value=0.9999, value=0.9500, step=0.0100, format="%.4f")
     horizon_waktu = st.number_input("Horizon Waktu (t hari)", min_value=1, value=1, step=1)
-    # Perbaikan format modal awal
     modal_awal = st.number_input("Modal Awal (V0) - Rp", min_value=0.0, value=10000000.0, step=100000.0, format="%.2f")
     
     submit_button = st.form_submit_button(label='Jalankan Analisis 🚀')
 
-with st.sidebar.expander("📖 Panduan Parameter & Interpretasi"):
+with st.sidebar.expander("📖 Panduan Parameter"):
     st.write("""
-    * **Jumlah Saham (N):** Tujuannya adalah melakukan **diversifikasi**. Sistem memilih $N$ saham dengan return positif dan rata-rata korelasi terendah (maksimal 0,2) agar aset tidak bergerak searah, sehingga risiko dapat ditekan seoptimal mungkin.
-    * **Toleransi Risiko (k):** Parameter penalti terhadap variansi.
+    * **Jumlah Saham (N):** Sistem melakukan uji normalitas univariat untuk memfilter saham tanpa outlier ekstrem, lalu memfilter saham dengan *mean return* positif. Dari sana, algoritma *greedy* akan mencari sepasang saham dengan korelasi terkecil sebagai titik awal, lalu menambahkan hingga $N$ saham yang memiliki rata-rata korelasi maksimal 0,2 terhadap saham terpilih. Tujuannya adalah diversifikasi optimal.
+    * **Toleransi Risiko (k):** Parameter penalti terhadap variansi dalam persamaan lagrange.
         * **k Besar (misal $\ge 50$):** Investor Penghindar Risiko (*Risk Averse*).
         * **k Menengah (misal $2-10$):** Investor Netral Risiko (*Risk Neutral*).
         * **k Mendekati 0 (misal $0.01$):** Investor Berani Risiko (*Risk Seeking*).
-    * **Short-Selling (Trading Limit):** Komputasi ini mengizinkan bobot negatif. Investor dapat meminjam saham tertentu untuk dijual (misal $w_1 = -50\%$, senilai 500k), lalu dana tersebut digunakan untuk membeli saham lain ($w_2$). Mekanisme ini tetap berlaku meskipun meminjam lebih dari 100% modal ($-100\%$). Saham yang di-short (*shorted*) harus dikembalikan dan melibatkan imbal hasil.
-    * **Interpretasi Data 2024:** Output yang dihasilkan merupakan estimasi risiko masa depan menggunakan memori volatilitas historis (2024) sebagai estimator terbaik yang tersedia (*unbiased estimator*).
+    * **Short-Selling (Trading Limit):** Karena optimasi multiobjektif ini diselesaikan melalui persamaan matriks analitik eksak, komputasi secara matematis mengizinkan bobot negatif secara mutlak. Investor dapat meminjam saham tertentu untuk dijual, lalu dana tersebut dialokasikan ke saham lain. Saham yang di-short kelak harus dikembalikan.
     """)
 
 # 3. Fungsi Pemrosesan Data
@@ -57,63 +54,86 @@ def siapkan_data():
     
     df['Stock_Name'] = df['Stock_Name'].str.strip()
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-    df_2024 = df[df['Date'].dt.year == 2024]
-    df_close = df_2024.pivot(index='Date', columns='Stock_Name', values='Close')
+    
+    # Kalkulasi Log Return seluruh data sebelum di-filter 2024
+    df_close = df.pivot(index='Date', columns='Stock_Name', values='Close')
     log_return = np.log(df_close / df_close.shift(1)).dropna()
-    return log_return
+    log_return_2024 = log_return[log_return.index.year == 2024]
+    
+    return log_return_2024
 
 # Eksekusi Utama
 if submit_button:
-    with st.spinner('Memproses data dan menjalankan optimasi...'):
+    with st.spinner('Memproses data dan menjalankan komputasi matriks...'):
         log_return = siapkan_data()
 
         # TAHAP 1: SELEKSI SAHAM
-        mean_ret = log_return.mean()
+        # Uji Normalitas Univariat (Jarque-Bera)
+        normal_stocks = []
+        for col in log_return.columns:
+            stat, p_value = stats.jarque_bera(log_return[col].dropna())
+            if p_value > 0.05:
+                normal_stocks.append(col)
+        
+        if len(normal_stocks) >= n_saham:
+            df_filtered = log_return[normal_stocks]
+        else:
+            df_filtered = log_return
+
+        # Filter Mean Positif
+        mean_ret = df_filtered.mean()
         saham_positif = mean_ret[mean_ret > 0].index.tolist()
-        df_positif = log_return[saham_positif]
+        df_positif = df_filtered[saham_positif]
 
+        # Algoritma Korelasi Rakus (Greedy) Sesuai Colab
         corr_matrix = df_positif.corr()
-        terpilih = [df_positif.mean().idxmax()] 
-
-        for saham in df_positif.columns:
-            if len(terpilih) >= n_saham:
+        corr_upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        
+        # Step 1: Pasangan dengan korelasi terkecil absolut sebagai titik awal
+        min_idx = corr_upper.stack().idxmin()
+        terpilih = list(min_idx)
+        
+        sisa_saham = [s for s in corr_matrix.columns if s not in terpilih]
+        
+        # Step 2: Iterasi greedy
+        while sisa_saham and len(terpilih) < n_saham:
+            kandidat_scores = {}
+            for saham in sisa_saham:
+                korelasi = [corr_matrix.loc[saham, s] for s in terpilih]
+                avg_corr = np.mean(korelasi)
+                kandidat_scores[saham] = avg_corr
+                
+            saham_baru = min(kandidat_scores, key=kandidat_scores.get)
+            avg_terkecil = kandidat_scores[saham_baru]
+            
+            if avg_terkecil > 0.2:
                 break
-            if saham not in terpilih:
-                korelasi_aman = True
-                for t in terpilih:
-                    if corr_matrix.loc[saham, t] > 0.2:
-                        korelasi_aman = False
-                        break
-                if korelasi_aman:
-                    terpilih.append(saham)
+                
+            terpilih.append(saham_baru)
+            sisa_saham.remove(saham_baru)
 
         if len(terpilih) < n_saham:
-            st.warning(f"Hanya ditemukan {len(terpilih)} saham yang memenuhi kriteria korelasi maksimal 0.2.")
+            st.warning(f"Sistem berhenti pada {len(terpilih)} saham karena kandidat saham selanjutnya memiliki rata-rata korelasi > 0.2. Algoritma dilanjutkan dengan {len(terpilih)} saham.")
 
-        # Menampilkan teks dinamis pembentukan portofolio
-        st.success(f"**Ringkasan Pembentukan:** Dari 29 saham yang tersedia, algoritma telah menyeleksi **{len(terpilih)} saham** ({', '.join(terpilih)}) yang memiliki *mean return* positif dengan korelasi antar saham maksimal 0,2 untuk memastikan diversifikasi yang solid. Optimasi dilakukan dengan tingkat toleransi risiko **$k$ = {nilai_k}**.")
+        st.success(f"**Ringkasan Pembentukan:** Algoritma telah melakukan uji normalitas univariat, menyaring *mean return* positif, dan menyeleksi **{len(terpilih)} saham** ({', '.join(terpilih)}) menggunakan metode *Greedy Correlation*. Optimasi dilakukan secara analitik matriks dengan tingkat toleransi risiko **$k$ = {nilai_k}**.")
 
-        # TAHAP 2: OPTIMASI MULTIOBJEKTIF
-        ret_terpilih = df_positif[terpilih]
-        mu = ret_terpilih.mean()
-        cov_matrix = ret_terpilih.cov()
+        # TAHAP 2: OPTIMASI MULTIOBJEKTIF (Solusi Analitik Eksak Matrix Lagrange)
+        df_port = df_positif[terpilih]
+        
+        def hitung_bobot_multiobjektif(df_data, k):
+            R = df_data.mean().values
+            Sigma = df_data.cov().values
+            Sigma_inv = np.linalg.inv(Sigma)
+            ones = np.ones(len(R))
 
-        def optimasi_multiobjektif(mean_returns, cov_mat, k):
-            num_assets = len(mean_returns)
-            def objective(weights):
-                port_return = np.sum(mean_returns * weights)
-                port_var = np.dot(weights.T, np.dot(cov_mat, weights))
-                return (k * port_var) - port_return
+            numerator   = (1/(2*k)) * ones @ Sigma_inv @ R - 1
+            denominator = (1/(2*k)) * ones @ Sigma_inv @ ones
+            lam = numerator / denominator
 
-            constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
-            # Constraint dihapus agar komputasi murni mencari global minimum (mengizinkan short-selling)
-            bounds = tuple((-5, 5) for _ in range(num_assets)) 
-                
-            initial_weights = np.array([1/num_assets] * num_assets)
-            result = minimize(objective, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints)
-            return result.x
+            w = (1/(2*k)) * Sigma_inv @ (R - lam * ones)
+            return w
 
-        bobot_optimal = optimasi_multiobjektif(mu, cov_matrix, nilai_k)
+        bobot_optimal = hitung_bobot_multiobjektif(df_port, nilai_k)
 
         # UI LAYOUT: Hasil Pembobotan
         col1, col2 = st.columns([1, 1])
@@ -129,7 +149,7 @@ if submit_button:
             st.info(f"**Total Bobot Matematis:** {np.sum(bobot_optimal):.4f} (Mewakili 100% dari modal)")
 
             if any(bobot_optimal < -0.001):
-                st.error("📉 **Aktivitas Short-Selling (Trading Limit):** Terdapat alokasi bobot negatif. Secara teknis, investor menjual saham tersebut dengan meminjam dari pihak lain, lalu dananya digunakan untuk mendanai pembelian saham berbobot positif secara lebih agresif. Saham pinjaman ini kelak harus dikembalikan beserta imbal hasilnya.")
+                st.error("📉 **Aktivitas Short-Selling (Trading Limit):** Terdapat alokasi bobot negatif. Investor meminjam saham tersebut dari pihak lain untuk dijual, dan dananya digunakan untuk mendanai pembelian saham lain yang berbobot positif. Kelak saham tersebut harus dikembalikan beserta imbal hasilnya.")
 
         with col2:
             st.subheader("📊 Visualisasi Portofolio")
@@ -142,18 +162,16 @@ if submit_button:
         st.markdown("---")
         st.subheader("🛡️ Pengukuran Risiko (Value at Risk - Historical Simulation)")
 
-        return_port = ret_terpilih.values @ bobot_optimal
+        return_port = df_port.values @ bobot_optimal
         alpha = 1 - tingkat_kepercayaan
         percentil = np.percentile(return_port, alpha * 100)
         var_rupiah = modal_awal * abs(percentil) * np.sqrt(horizon_waktu)
 
         m1, m2, m3 = st.columns(3)
-        # Mengganti istilah "Percentil Return Aktual" agar lebih mudah dipahami
         m1.metric("Batas Return Terburuk", f"{percentil*100:.3f}%")
         m2.metric("Tingkat Kepercayaan", f"{tingkat_kepercayaan*100:.1f}%")
         m3.metric("Potensi Kerugian (VaR)", f"Rp {var_rupiah:,.2f}", delta="Risiko Maksimal", delta_color="inverse")
 
-        # Mengganti narasi interpretasi 
         st.success(f"**Interpretasi:** Terdapat probabilitas sebesar **{tingkat_kepercayaan*100:.1f}%** bahwa kerugian aktual portofolio ini tidak akan melebihi estimasi **Rp {var_rupiah:,.2f}** dalam **{horizon_waktu} hari perdagangan** ke depan.")
 
 else:
